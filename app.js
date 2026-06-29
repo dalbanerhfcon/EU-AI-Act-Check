@@ -11,7 +11,7 @@ const app = document.getElementById("app");
 const questions = [
   {
     id: "usesAi",
-    text: "Nutzen Sie im Unternehmen bereits KI-Tools wie ChatGPT, Copilot, Claude oder ähnliche Systeme?",
+    text: "Nutzen Sie im Unternehmen bereits offiziell freigegebene KI-Tools wie ChatGPT, Copilot, Claude oder ähnliche Systeme?",
     criticalWhen: true
   },
   {
@@ -65,27 +65,29 @@ const resultCopy = {
   green: {
     label: "Grün",
     title: "Gut gesteuerte KI-Nutzung",
-    text: "Ihre Antworten zeigen aktuell keinen akuten Handlungsbedarf. Die wesentlichen organisatorischen Grundlagen sind vorhanden oder KI wird derzeit noch nicht aktiv eingesetzt.",
-    next: "Status regelmäßig überprüfen."
+    text: "Ihre Antworten zeigen aktuell keinen akuten Handlungsbedarf. Die Grundlagen sind vorhanden oder KI wird derzeit noch nicht aktiv eingesetzt."
   },
   yellow: {
     label: "Gelb",
     title: "Regelungsbedarf",
-    text: "KI ist für Ihr Unternehmen relevant. Einzelne Grundlagen zur Steuerung sollten ergänzt oder geschärft werden.",
-    next: "Fehlende Governance-Bausteine priorisiert schließen."
+    text: "KI ist für Ihr Unternehmen relevant. Einzelne Grundlagen oder Prüfpunkte sollten ergänzt, aktualisiert oder vertieft werden."
   },
   red: {
     label: "Rot",
     title: "Erhöhter Prüfbedarf",
-    text: "Ihre Antworten zeigen potenziell sensible KI-Nutzung. Daten, Einsatzbereich oder Außenwirkung sollten konkret geprüft und sauber gesteuert werden.",
-    next: "Konkreten KI-Anwendungsfall vertieft prüfen."
+    text: "Ihre Antworten zeigen unkontrollierte oder sensible KI-Nutzung. Der Einsatz sollte strukturiert geprüft und gesteuert werden."
+  },
+  noai: {
+    label: "Grün",
+    title: "Noch kein akuter Handlungsbedarf",
+    text: "Aktuell ist kein offiziell freigegebener KI-Einsatz und keine Schatten-KI erkennbar. Prüfen Sie dies regelmäßig, spätestens bei neuen Tools oder geänderten Arbeitsweisen."
   }
 };
 
 const recommendations = {
   inventory: {
-    title: "KI-Inventar erstellen",
-    text: "Tools, Zweck, Datenarten, Nutzergruppe und Zuständigkeit erfassen."
+    title: "KI-Inventarliste erstellen",
+    text: "Alle genutzten KI-Tools in einem einfachen KI-Inventar erfassen: Zweck, Datenarten, Nutzergruppe und Zuständigkeit."
   },
   policy: {
     title: "KI-Richtlinie einführen",
@@ -93,11 +95,11 @@ const recommendations = {
   },
   training: {
     title: "KI-Kompetenz nach Art. 4 aufbauen",
-    text: "Mitarbeitende zu sicherer Nutzung, Risiken und Grenzen schulen."
+    text: "Mitarbeitende zu sicherer Nutzung, Risiken und Grenzen schulen; regelmäßig auffrischen."
   },
   shadow: {
     title: "Private KI-Nutzung regeln",
-    text: "Freigegebene Tools definieren und sensible Daten ausschließen."
+    text: "Freigegebene Tools definieren und sensible Daten in nicht freigegebenen Tools ausschließen."
   },
   data: {
     title: "Datenschutz und Vertraulichkeit prüfen",
@@ -112,12 +114,12 @@ const recommendations = {
     text: "Fachliche Endkontrolle, Transparenz und mögliche Kennzeichnung regeln."
   },
   maintain: {
-    title: "Regelmäßig aktualisieren",
-    text: "Inventar, Richtlinie und Schulungen bei neuen Tools aktuell halten."
+    title: "Regelmäßig prüfen und aktualisieren",
+    text: "KI-Inventarliste, Richtlinie und KI-Kompetenz nach Art. 4 mindestens jährlich prüfen und spätestens bei neuen Tools aktualisieren."
   },
   future: {
-    title: "KI-Einsatz frühzeitig steuern",
-    text: "Bei Einführung von KI direkt Inventar, Richtlinie und Schulung mitdenken."
+    title: "KI-Einsatz vorbereiten und regelmäßig abfragen",
+    text: "Regelmäßig klären, ob KI genutzt wird. Bei Einführung: Tool ins KI-Inventar aufnehmen, erlaubte Nutzung festlegen und Mitarbeitende vor dem Einsatz schulen."
   }
 };
 
@@ -300,6 +302,14 @@ function showQuestion(index) {
 
 function answer(value) {
   state.answers[state.current] = value;
+
+  // Skip Logic: Keine offiziell freigegebene KI-Nutzung.
+  // Frage 2 bleibt wichtig, weil trotzdem Schatten-KI möglich sein kann.
+  if (state.current === 1 && state.answers[0] === false && value === false) {
+    showResult();
+    return;
+  }
+
   const next = state.current + 1;
   if (next < questions.length) showQuestion(next);
   else showResult();
@@ -328,35 +338,49 @@ function calculate() {
   const sensitiveArea = getAnswer("sensitiveArea") === true;
   const externalContent = getAnswer("externalContent") === true;
 
-  if (!usesAi) {
+  if (!usesAi && !shadow) {
     return {
-      level: "green",
+      level: "noai",
       items: [recommendations.future],
       more: []
     };
   }
 
+  const missingGovernance = !hasInventory || !hasPolicy || !hasTraining;
   let level = "green";
   let items = [];
-  let more = [];
 
-  const push = (condition, key, min = "yellow") => {
+  const push = (condition, key) => {
     if (!condition) return;
     items.push({ key, ...recommendations[key] });
-    level = maxLevel(level, min);
   };
 
-  push(sensitiveData, "data", "red");
-  push(sensitiveArea, "risk", "red");
-  push(!hasInventory, "inventory", "yellow");
-  push(!hasPolicy, "policy", "yellow");
-  push(!hasTraining, "training", "yellow");
-  push(shadow, "shadow", "yellow");
-  push(externalContent, "transparency", "yellow");
+  // Reihenfolge: Grundlagen zuerst, dann spezifische Risiken.
+  push(!hasInventory, "inventory");
+  push(!hasPolicy, "policy");
+  push(!hasTraining, "training");
+  push(shadow, "shadow");
+  push(sensitiveData, "data");
+  push(sensitiveArea, "risk");
+  push(externalContent, "transparency");
 
   if (items.length === 0) {
     items.push({ key: "maintain", ...recommendations.maintain });
     level = "green";
+  } else {
+    level = "yellow";
+  }
+
+  // Shadow AI + fehlende Governance ist Rot.
+  if (shadow && missingGovernance) {
+    level = "red";
+  }
+
+  // Sensible Daten / Bereiche: Rot nur bei fehlender Governance, sonst Gelb.
+  if ((sensitiveData || sensitiveArea) && missingGovernance) {
+    level = "red";
+  } else if (sensitiveData || sensitiveArea) {
+    level = maxLevel(level, "yellow");
   }
 
   return {
@@ -369,11 +393,12 @@ function calculate() {
 function showResult() {
   const calc = calculate();
   const copy = resultCopy[calc.level];
+  const statusClass = calc.level === "noai" ? "green" : calc.level;
 
   render(`
     <div class="result-layout">
       <div class="result-main">
-        <div class="result-status ${calc.level}">
+        <div class="result-status ${statusClass}">
           <div class="status-dot" aria-hidden="true"></div>
           <div class="status-copy">
             <span>Ihr Ergebnis</span>
@@ -404,7 +429,11 @@ function showResult() {
     footerButton: `<button class="btn ghost" id="resultBackBtn">Zurück</button><button class="btn ghost" id="restartBtn">Check neu starten</button>`
   });
 
-  document.getElementById("resultBackBtn").addEventListener("click", () => showQuestion(questions.length - 1));
+  document.getElementById("resultBackBtn").addEventListener("click", () => {
+    if (getAnswer("usesAi") === false && getAnswer("shadowAi") === false) showQuestion(1);
+    else if (getAnswer("usesAi") === false) showQuestion(0);
+    else showQuestion(questions.length - 1);
+  });
   document.getElementById("restartBtn").addEventListener("click", showStart);
 }
 
